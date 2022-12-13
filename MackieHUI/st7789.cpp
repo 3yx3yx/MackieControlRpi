@@ -1,27 +1,26 @@
-
 #include "mygpio.h"
 #include <st7789.h>
-
+#include <QDebug>
 #include <stdlib.h>
 
 void DisplayTFT::Init(int Width, int Height)
 {
   ST7789_Width = Width;
   ST7789_Height = Height;
-  
-  ST7789_HardReset(); 
+  qDebug()<<"init LCD";
+  ST7789_HardReset();
   ST7789_SoftReset();
   ST7789_SleepModeExit();
 
   ST7789_ColorModeSet(ST7789_ColorMode_65K | ST7789_ColorMode_16bit);
-  bcm2835_delay(10);
+ // bcm2835_delay(10);
   ST7789_MemAccessModeSet(4, 1, 1, 0);
-  bcm2835_delay(10);
+//  bcm2835_delay(10);
   ST7789_InversionMode(1);
-  bcm2835_delay(10);
-  FillScreen(GREEN);
+//  bcm2835_delay(10);
+ // FillScreen(GREEN);
   ST7789_DisplayPower(1);
-  bcm2835_delay(10);
+//  bcm2835_delay(10);
 }
 
 void DisplayTFT::ST7789_HardReset(void)
@@ -61,13 +60,13 @@ inline void DisplayTFT::ST7789_SendData(uint8_t Data)
 
 void DisplayTFT::ST7789_SleepModeEnter( void )
 {
-	ST7789_SendCmd(ST7789_Cmd_SLPIN);
+    ST7789_SendCmd(ST7789_Cmd_SLPIN);
   bcm2835_delay(500);
 }
 
 void DisplayTFT::ST7789_SleepModeExit( void )
 {
-	ST7789_SendCmd(ST7789_Cmd_SLPOUT);
+    ST7789_SendCmd(ST7789_Cmd_SLPOUT);
   bcm2835_delay(500);
 }
 
@@ -75,16 +74,16 @@ void DisplayTFT::ST7789_SleepModeExit( void )
 void DisplayTFT::ST7789_ColorModeSet(uint8_t ColorMode)
 {
   ST7789_SendCmd(ST7789_Cmd_COLMOD);
-  ST7789_SendData(ColorMode & 0x77);  
+  ST7789_SendData(ColorMode & 0x77);
 }
 
 void DisplayTFT::ST7789_MemAccessModeSet(uint8_t Rotation, uint8_t VertMirror, uint8_t HorizMirror, uint8_t IsBGR)
 {
   uint8_t Value;
-  Rotation &= 7; 
+  Rotation &= 7;
 
   ST7789_SendCmd(ST7789_Cmd_MADCTL);
-  
+
   switch (Rotation)
   {
   case 0:
@@ -112,15 +111,15 @@ void DisplayTFT::ST7789_MemAccessModeSet(uint8_t Rotation, uint8_t VertMirror, u
     Value = ST7789_MADCTL_MV | ST7789_MADCTL_MX | ST7789_MADCTL_MY;
     break;
   }
-  
+
   if (VertMirror)
     Value = ST7789_MADCTL_ML;
   if (HorizMirror)
     Value = ST7789_MADCTL_MH;
-  
+
   if (IsBGR)
     Value |= ST7789_MADCTL_BGR;
-  
+
   ST7789_SendData(Value);
 }
 
@@ -157,19 +156,19 @@ inline void DisplayTFT::RamWrite(uint16_t *pBuff, uint16_t Len)
 {
   while (Len--)
   {
-    ST7789_SendData(*pBuff >> 8);  
+    ST7789_SendData(*pBuff >> 8);
     ST7789_SendData(*pBuff & 0xFF);
-  }  
+  }
 }
 // with default values draws full screen image 240x240 px
-inline void DisplayTFT::DrawImage(uint16_t* fbuff,int x0=0,int y0=0,int w=240, int h=240)
+void DisplayTFT::DrawImage(uint16_t* fbuff,int x0,int y0,int w, int h)
 {
     uint8_t cs = CS_current;
-    SetWindow(x0,y0,w,h);
+    SetWindow(x0,y0,w+x0-1,y0+h-1);
     bcm2835_gpio_write(cs,HIGH);
     bcm2835_gpio_write(PIN_DISPLAY_DC,HIGH);
     bcm2835_gpio_write(cs,LOW);
-    spiWrite(fbuff,ST7789_Height*ST7789_Width);
+    spiWrite(fbuff,w*h);
     bcm2835_gpio_write(cs,HIGH);
 }
 
@@ -177,35 +176,12 @@ inline void DisplayTFT::DrawImage(uint16_t* fbuff,int x0=0,int y0=0,int w=240, i
 
 void DisplayTFT::spiWrite (uint16_t* tbuf, uint32_t len)
 {
-    volatile uint32_t* paddr = bcm2835_spi0 + BCM2835_SPI0_CS/4;
-    volatile uint32_t* fifo = bcm2835_spi0 + BCM2835_SPI0_FIFO/4;
-    uint32_t TXCnt=0;
-
-    /* This is Polled transfer as per section 10.6.1
-    // BUG ALERT: what happens if we get interupted in this section, and someone else
-    // accesses a different peripheral?
-    */
-    /* Clear TX and RX fifos */
-    bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_CLEAR, BCM2835_SPI0_CS_CLEAR);
-    /* Set TA = 1 */
-    bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_TA, BCM2835_SPI0_CS_TA);
-    /* Use the FIFO's to reduce the interbyte times */
-    while((TXCnt < len))
+    while (len--)
     {
-        /* TX fifo not full, so add some more bytes */
-        while(((bcm2835_peri_read(paddr) & BCM2835_SPI0_CS_TXD))&&(TXCnt < len ))
-        {
-        bcm2835_peri_write_nb(fifo, (tbuf[TXCnt]>> 8));
-        bcm2835_peri_write_nb(fifo, (tbuf[TXCnt]& 0xFF));
-        TXCnt++;
-        }
+        ST7789_SendData(*tbuf >> 8);
+        ST7789_SendData(*tbuf & 0xFF);
+        tbuf++;
     }
-    /* Wait for DONE to be set */
-    while (!(bcm2835_peri_read_nb(paddr) & BCM2835_SPI0_CS_DONE))
-    ;
-
-    /* Set TA = 0, and also set the barrier */
-    bcm2835_peri_set_bits(paddr, 0, BCM2835_SPI0_CS_TA);
 }
 void DisplayTFT::ST7789_ColumnSet(uint16_t ColumnStart, uint16_t ColumnEnd)
 {
@@ -213,15 +189,15 @@ void DisplayTFT::ST7789_ColumnSet(uint16_t ColumnStart, uint16_t ColumnEnd)
     return;
   if (ColumnEnd > ST7789_Width)
     return;
-  
+
   ColumnStart += ST7789_X_Start;
   ColumnEnd += ST7789_X_Start;
-  
+
   ST7789_SendCmd(ST7789_Cmd_CASET);
-  ST7789_SendData(ColumnStart >> 8);  
-  ST7789_SendData(ColumnStart & 0xFF);  
-  ST7789_SendData(ColumnEnd >> 8);  
-  ST7789_SendData(ColumnEnd & 0xFF);  
+  ST7789_SendData(ColumnStart >> 8);
+  ST7789_SendData(ColumnStart & 0xFF);
+  ST7789_SendData(ColumnEnd >> 8);
+  ST7789_SendData(ColumnEnd & 0xFF);
 }
 
 void DisplayTFT::ST7789_RowSet(uint16_t RowStart, uint16_t RowEnd)
@@ -230,22 +206,22 @@ void DisplayTFT::ST7789_RowSet(uint16_t RowStart, uint16_t RowEnd)
     return;
   if (RowEnd > ST7789_Height)
     return;
-  
+
   RowStart += ST7789_Y_Start;
   RowEnd += ST7789_Y_Start;
-  
+
   ST7789_SendCmd(ST7789_Cmd_RASET);
-  ST7789_SendData(RowStart >> 8);  
-  ST7789_SendData(RowStart & 0xFF);  
-  ST7789_SendData(RowEnd >> 8);  
-  ST7789_SendData(RowEnd & 0xFF);  
+  ST7789_SendData(RowStart >> 8);
+  ST7789_SendData(RowStart & 0xFF);
+  ST7789_SendData(RowEnd >> 8);
+  ST7789_SendData(RowEnd & 0xFF);
 }
 
 void DisplayTFT::ST7789_SetBL(uint8_t Value)
 {
   if (Value > 100)
     Value = 100;
-  
+
 #if (ST77xx_BLK_PWM_Used)
 
 #endif
@@ -273,7 +249,7 @@ void DisplayTFT::DrawRectangleFilled(int16_t x1, int16_t y1, int16_t x2, int16_t
     SwapInt16Values(&x1, &x2);
   if (y1 > y2)
     SwapInt16Values(&y1, &y2);
-    FillRect(x1, y1, x2 - x1, y2 - y1, fillcolor);
+   FillRect(x1, y1, x2 - x1, y2 - y1, fillcolor);
 }
 
 void DisplayTFT::DrawLine(int16_t x1, int16_t y1, int16_t x2, int16_t y2, uint16_t color)
@@ -288,7 +264,7 @@ void DisplayTFT::DrawLine(int16_t x1, int16_t y1, int16_t x2, int16_t y2, uint16
       FillRect(x1, y1, 1, y2 - y1 + 1, color);
     return;
   }
-  
+
 
   if (y1 == y2)
   {
@@ -299,7 +275,7 @@ void DisplayTFT::DrawLine(int16_t x1, int16_t y1, int16_t x2, int16_t y2, uint16
       FillRect(x1, y1, x2 - x1 + 1, 1, color);
     return;
   }
-  
+
   ST7789_DrawLine_Slow(x1, y1, x2, y2, color);
 }
 
@@ -321,12 +297,12 @@ void DisplayTFT::ST7789_DrawLine_Slow(int16_t x1, int16_t y1, int16_t x2, int16_
 
   DrawPixel(x2, y2, color);
 
-  while (x1 != x2 || y1 != y2) 
+  while (x1 != x2 || y1 != y2)
   {
     DrawPixel(x1, y1, color);
     const int16_t error2 = error * 2;
- 
-    if (error2 > -deltaY) 
+
+    if (error2 > -deltaY)
     {
       error -= deltaY;
       x1 += signX;
@@ -361,22 +337,22 @@ void DisplayTFT::DrawCircleFilled(int16_t x0, int16_t y0, int16_t radius, uint16
     DrawLine(x0 - x, y0 - y, x0 - x, y0 + y, fillcolor);
     error = 2 * (delta + y) - 1;
 
-    if (delta < 0 && error <= 0) 
+    if (delta < 0 && error <= 0)
     {
       ++x;
       delta += 2 * x + 1;
       continue;
     }
-	
+
     error = 2 * (delta - x) - 1;
-		
-    if (delta > 0 && error > 0) 
+
+    if (delta > 0 && error > 0)
     {
       --y;
       delta += 1 - 2 * y;
       continue;
     }
-	
+
     ++x;
     delta += 2 * (x - y);
     --y;
@@ -398,22 +374,22 @@ void DisplayTFT::DrawCircle(int16_t x0, int16_t y0, int16_t radius, uint16_t col
     DrawPixel(x0 - x, y0 - y, color);
     error = 2 * (delta + y) - 1;
 
-    if (delta < 0 && error <= 0) 
+    if (delta < 0 && error <= 0)
     {
       ++x;
       delta += 2 * x + 1;
       continue;
     }
-	
+
     error = 2 * (delta - x) - 1;
-		
-    if (delta > 0 && error > 0) 
+
+    if (delta > 0 && error > 0)
     {
       --y;
       delta += 1 - 2 * y;
       continue;
     }
-	
+
     ++x;
     delta += 2 * (x - y);
     --y;

@@ -4,25 +4,35 @@
 #include "st7789.h"
 #include <cstring>
 #include <memory.h>
+#include <QRect>
+
 class DisplayThread : public QThread
 {
+    Q_OBJECT
 public:
-    DisplayThread(){
-        display = new DisplayTFT;
-        display->Init(240,240);
-        memset(frameBuffer, WHITE, sizeof(frameBuffer));
+    DisplayThread() {
+        disp = new DisplayTFT;       
+        updateRectNext.setRect(0,0,240,240);
+        updateRectPrev.setRect(0,0,240,240);
     }
     ~DisplayThread(){
-        delete display;
+        delete disp;
     }
-    DisplayTFT* display;
-    uint16_t frameBuffer[8][240*240] = {};
+    DisplayTFT* disp;
+    uint16_t (*frameBufferNext)[8][240*240];
+    uint16_t (*frameBufferPrev)[8][240*240];
+    uint16_t frameBuffer1[8][240*240] = {};
+    uint16_t frameBuffer2[8][240*240] = {};
 
-
-    void update (int display=1, uint16_t* data = {});
-    void run(){
+    QRect updateRectNext;
+    QRect updateRectPrev;
+    void update (int display=1);
+    void run() override{
         update ();
     }
+
+private:
+    QRect _rect;
 };
 
 #endif // DISPLAYTHREAD_H

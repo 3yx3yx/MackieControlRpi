@@ -1,4 +1,4 @@
-QT       += core gui
+QT       += core gui serialport
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -13,9 +13,11 @@ LIBS += -L/home/ilia/rpi-qt/sysroot/usr/include/alsa/asoundlib.h -lasound\
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
+    DisplayThread.cpp \
     MidiCallbacks.cpp \
     RtMidi.cpp \
     bcm2835.c \
+    infodisplay.cpp \
     main.cpp \
     mainwindow.cpp \
     midiprocess.cpp \
@@ -27,15 +29,20 @@ HEADERS += \
     MidiCallbacks.h \
     RtMidi.h \
     bcm2835.h \
+    infodisplay.h \
     mainwindow.h \
     midiprocess.h \
     mygpio.h \
     st7789.h
 
 FORMS += \
+    infodisplay.ui \
     mainwindow.ui
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /home/pi/$${TARGET}
 !isEmpty(target.path): INSTALLS += target
+
+RESOURCES += \
+    images.qrc

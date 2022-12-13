@@ -1,0 +1,9 @@
+<RCC>
+    <qresource prefix="/pngs">
+        <file>VUSCREEN.png</file>
+        <file>mute.png</file>
+        <file>record.png</file>
+        <file>solo.png</file>
+        <file>bar.png</file>
+    </qresource>
+</RCC>

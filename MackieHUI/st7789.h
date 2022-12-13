@@ -4,7 +4,7 @@
 
 #include <stdint.h>
 
-#define RGB565(r, g, b)         (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3))
+
 
 
 
@@ -75,17 +75,19 @@ class DisplayTFT
 {
 public:
     DisplayTFT()
+
     {
-        for (int i = 0; i<8; i++)
-        {
-            SetCurrentDisplay(i);
+//        Init(240,240);
+//        for (int i = 0; i<8; i++)
+//        {
+            //SetCurrentDisplay(i);
             Init(240,240);
-        }
-        bcm2835_delay(100);
+//        }
+//        bcm2835_delay(100);
     }
 
-    inline void SetCurrentDisplay (unsigned int display) {CS_current=CS_pins[display];}
-    inline void DrawImage (uint16_t* fbuff,int x0,int y0,int w, int h);
+    void SetCurrentDisplay (unsigned int display) {CS_current=CS_pins[display];}
+    void DrawImage (uint16_t* fbuff={},int x0=0,int y0=0,int w=240, int h=240);
     void FillScreen(uint16_t color);
     void FillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
     void SetWindow(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1);
@@ -101,7 +103,7 @@ public:
 private:
     const unsigned int CS_pins[8]={PIN_DISPLAY_CS_1,PIN_DISPLAY_CS_2,PIN_DISPLAY_CS_3,PIN_DISPLAY_CS_4,
                              PIN_DISPLAY_CS_5,PIN_DISPLAY_CS_6,PIN_DISPLAY_CS_7,PIN_DISPLAY_CS_8,};
-    unsigned int CS_current;
+    unsigned int CS_current =PIN_DISPLAY_CS_1 ;
     void Init(int Width, int Height);
     void spiWrite (uint16_t* tbuf, uint32_t len);
     uint8_t ST7789_Width, ST7789_Height;

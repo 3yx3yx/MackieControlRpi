@@ -3,6 +3,8 @@
 
 #include "midiprocess.h"
 
+QString convertToRawMidi (std::vector<unsigned char> *message, int port);
+
 
 void inputCallbackRedirect1 (double deltatime, std::vector< unsigned char > *message, void *);
 void inputCallbackRedirect2 (double deltatime, std::vector< unsigned char > *message, void * );
