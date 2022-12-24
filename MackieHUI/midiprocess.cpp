@@ -1,60 +1,34 @@
 #include "midiprocess.h"
-
-
 #include <unistd.h>
 #include <QProcess>
 #include <QFile>
 #include <QDir>
+#include "qdebug.h"
+#include "qthread.h"
 
-
-volatile int bytesCount[16]={0};//for bytes/sec calculation
-extern RtMidiIn::RtMidiCallback cbkTable[7];
 
 midiprocess::midiprocess()
 {
-    qDebug()<<"midii1212";
-    serial= new QSerialPort;
-
-    initUart(uartSpeed::midi38400);
-
-    int nDevicesChained=0;
-
-
-
-    connect(serial,SIGNAL(readyRead()),this,SLOT(serialGet()));
-    return;
+    serial = new QSerialPort;
+    initUart(31250);
 
     while(true)
     {
-        serial->waitForReadyRead(3000);
-        if (serial->bytesAvailable())
-        {
-            deviceOrderNumber = checkIfChained();
-            break;
-        }
-
         if (isUsbConnected())
         {
-            nDevicesChained = getChainedCount();
-            qDebug()<<"nDevicesChained:"<<nDevicesChained;
+            nDevices = getDevicesCount();
+            qDebug()<<"nDevicesChained:"<<nDevices;
             bool ok = initUart(uartSpeed::midiHighSpeed);
-            if (!ok){qDebug()<<"error setting uart hi speed"; return;}
-            ok = initUsbMidi(nDevicesChained);
+            if (!ok){qDebug()<<"error setting uart  speed"; return;}
+            ok = initUsbMidi(nDevices);
             if (!ok) {qDebug()<<"error on initUsbMidi(nDevicesChained)";return;}
 
-            midiin[0] = new RtMidiIn;
-            midiout[0] = new RtMidiOut;
-            midiin[0]->ignoreTypes(0,1,1);
-            midiin[0]->setCallback(&inputCallback);
-            midiin[0]->openPort(1);
-
-            for (int i =1; i<nDevicesChained-1; i++)
+            for (int i =0; i<nDevices-1; i++)
             {
                 midiin[i] = new RtMidiIn;
                 midiout[i] = new RtMidiOut;
-                midiin[i]->setCallback(cbkTable[i-1]) ;
                 midiin[i]->ignoreTypes(0,1,1);
-                midiin[i]->openPort(1+i);
+                midiin[i]->openPort(i+1); // port 0 is thru port
             }
 
             unsigned int nPorts = midiin[0]->getPortCount();
@@ -66,15 +40,54 @@ midiprocess::midiprocess()
                 qDebug()<<QString::fromStdString(midiout[0]->getPortName(i));
             }
 
+            midireader = new UsbMidiReader(midiin,nDevices);
+            connect (midireader,SIGNAL(usbMsgForUart()), this, SLOT(sendUartToChain()));
+
+            connect(midireader,SIGNAL(usbMsgForDevice(std::vector<unsigned char>)),
+                    this, SLOT(parseMackie(std::vector<unsigned char>)));
+
+
+            connect (this, SIGNAL(startReadingUsb()), midireader, SLOT(processInputData()));
+            QThread* thread = new QThread;
+            midireader->moveToThread(thread);
+            thread->start();
+
+            if(nDevices>1) {  // if we have chained devices
+                connect(serial,SIGNAL(readyRead()),SLOT(serialToUsbRepeat()));
+            }
+            emit startReadingUsb();
+
             break;
+
         } // if usb connected
+
+        else // if no usb connection
+        {
+            if (serial->bytesAvailable())
+            {
+                deviceOrderNumber = checkIfChained();
+                if(deviceOrderNumber) // if device is in the chain
+                {
+                    QByteArray tx;
+                    tx.append(255);
+                    tx.append(255);
+                    tx.append(deviceOrderNumber+1);
+                    serial->write(tx);
+
+                    bool ok = initUart(uartSpeed::midiHighSpeed);
+                    if (!ok){qDebug()<<"error setting uart  speed"; return;}
+                    connect(serial,SIGNAL(readyRead()),SLOT(serialFilter()));
+                }
+                else {// if device is connected directly to midi adapter/interface
+                    connect(serial,SIGNAL(readyRead()),SLOT(serialGetSlowMidi()));
+                }
+
+                break;
+            }
+            serial->waitForReadyRead(1000);
+        }
+
     } //while 1
-
-
-    if(!(getUsbStatus()==1 && nDevicesChained==1))
-    {
-        connect(serial,SIGNAL(readyRead()),SLOT(serialGet()));        
-    }
 }
 
 midiprocess:: ~midiprocess()
@@ -83,17 +96,315 @@ midiprocess:: ~midiprocess()
     process.start("/bin/sh",QStringList()<<"-c"<<"sudo modprobe -r g_midi");
 }
 
-void midiprocess::serialGet(void)
+void midiprocess::sendMackieMsg(unsigned int channel, int type, int value)
 {
-qDebug()<<"from serial:"<<serial->readAll();
+    std::vector<unsigned char> msg;
+    switch (type)
+    {
+    case midiDefs::fader_pos:
+        msg.push_back(midiDefs::faderFirst+channel);
+        msg.push_back((unsigned char)(value>>8));
+        msg.push_back((unsigned char)(value & 0xFF));
+        break;
+    case midiDefs::btn_rec:
+        msg.push_back(midiDefs::button);
+        msg.push_back(channel);
+        if(value)
+            msg.push_back(127);
+        else
+            msg.push_back(0x00);
+        break;
+    case midiDefs::btn_solo:
+        msg.push_back(midiDefs::button);
+        msg.push_back(channel + 8);
+        if(value)
+            msg.push_back(127);
+        else
+            msg.push_back(0x00);
+        break;
+    case midiDefs::btn_mute:
+        msg.push_back(midiDefs::button);
+        msg.push_back(channel + 16);
+        if(value)
+            msg.push_back(127);
+        else
+            msg.push_back(0x00);
+        break;
+    case midiDefs::btn_sel:
+        msg.push_back(midiDefs::button);
+        msg.push_back(channel+ 24);
+        if(value)
+            msg.push_back(127);
+        else
+            msg.push_back(0x00);
+        break;
+    }
 
-//while (!port.atEnd()) {
-//        QByteArray data = port.read(100);
-//        ....
-//    }
+    if (getUsbStatus()) {
+        midiout[0]->sendMessage(&msg);
+        return;
+    }
+
+    lockSerial.lockForWrite();
+    if (deviceOrderNumber)  // if device is in the chain
+    {
+        serial->putChar(0xF0 + deviceOrderNumber);
+    }  // if not skip this byte and write to uart
+
+    for (int i=0; i< (int)msg.size(); i++)
+    {
+        serial->putChar(msg.at(i));
+    }
+    lockSerial.unlock();
+
+
 }
 
+// slots // // // //
+void midiprocess::onfaderMoved(int channel, int val)
+{
+    sendMackieMsg(channel, midiDefs::fader_pos, val);
+}
 
+void midiprocess::onrecArmPressed(int channel)
+{
+    channels[channel].recArmed = !channels[channel].recArmed;
+    sendMackieMsg(channel, midiDefs::btn_rec, channels[channel].recArmed);
+    emit RecArmed(channel,  channels[channel].recArmed);
+}
+
+void midiprocess::onsoloPressed(int channel)
+{
+    channels[channel].solo = !channels[channel].solo;
+    sendMackieMsg(channel, midiDefs::btn_solo, channels[channel].solo);
+    emit Soloed(channel, channels[channel].solo );
+}
+
+void midiprocess::onmutePressed(int channel)
+{
+    channels[channel].mute = !channels[channel].mute;
+    sendMackieMsg(channel, midiDefs::btn_mute, channels[channel].mute);
+    emit Muted(channel, channels[channel].mute);
+}
+
+void midiprocess::onselectPressed(int channel)
+{
+    channels[channel].selected = !channels[channel].selected;
+    sendMackieMsg(channel, midiDefs::btn_sel, channels[channel].selected);
+    emit Selected(channel, channels[channel].selected);
+}
+// end slots // // // // // // // //
+
+void midiprocess::serialFilter()
+{
+    int port=0;
+    char c=0;
+    bool search=1; // flag - searching for msg start byte
+    bool redirect =0;
+    int msgLen=0;
+    int pos=0;
+    std::vector<unsigned char> msg;
+
+    lockSerial.lockForRead();
+    while (!serial->atEnd())
+    {
+        serial->getChar(&c);
+
+        if (c> 0xF0 && search) // the order number byte (custom protocol for chained devices)
+        {
+            search = 0;
+            redirect = 0;
+            port = (c & 0xF);
+            if (port != deviceOrderNumber)
+            {
+                redirect = 1;
+            }
+            pos=0;
+            msgLen=0;
+            continue;
+        }
+        if (search) { // if message start is not found
+            continue;
+        }
+        if (pos==0) // msg start byte was found
+        {
+            if (c>=midiDefs::faderFirst && c<=midiDefs::faderFirst+7)
+            {
+                msgLen = 3;
+            }
+            else
+            {
+                switch (c)
+                {
+                case midiDefs::button: msgLen = 3; break;
+                //case midiDefs::vpot: msgLen = 3; break;
+                case midiDefs::displayBlockStart: msgLen = 14; break;
+                case midiDefs::vuMeter: msgLen = 2; break;
+                default: // unexpected msg or error
+                    search =1;
+                    continue;
+                    break;
+                }
+            }
+        }
+
+        if (redirect)
+        {
+            if (pos < msgLen)
+            {
+                serial->putChar(c);
+                pos++;
+            }
+            if (pos == msgLen)
+            {
+                search = 1;
+                continue;
+            }
+        }
+
+        else
+        {
+            if (pos < msgLen)
+            {
+                msg.push_back(c);
+                pos++;
+            }
+            if (pos == msgLen)
+            {
+                parseMackie(msg);
+                search =1;
+            }
+        }
+
+    }
+
+    lockSerial.unlock();
+}
+
+void midiprocess::serialGetSlowMidi()  // slot for general DIN MIDI connections
+{
+    char c=0;
+    int msgLen=0;
+    int pos=0;
+    std::vector<unsigned char> msg;
+
+    lockSerial.lockForRead();
+
+    while (!serial->atEnd())
+    {
+        serial->getChar(&c);
+
+        if (pos==0)
+        {
+            if (c>=midiDefs::faderFirst && c<=midiDefs::faderFirst+7)
+            {
+                msgLen = 3;
+            }
+            else
+            {
+                switch (c)
+                {
+                case midiDefs::button: msgLen = 3; break;
+                case midiDefs::vpot: msgLen = 3; break;
+                case midiDefs::displayBlockStart: msgLen = 14; break;
+                case midiDefs::vuMeter: msgLen =2; break;
+                default: // unexpected msg or error
+                    pos = 0;
+                    continue;
+                    break;
+                }
+            }
+        }
+
+        if (pos < msgLen)
+        {
+            msg.push_back(c);
+            pos++;
+        }
+        if (pos == msgLen)
+        {
+            parseMackie(msg);
+            msg.clear();
+            pos = 0;
+        }
+    }
+
+    lockSerial.unlock();
+}
+
+void midiprocess::serialToUsbRepeat()
+{
+    int port=0;
+    char c=0;
+    bool search=1; // flag - searching for msg start byte
+    int msgLen=0;
+    int pos=0;
+    std::vector<unsigned char> msg;
+
+    lockSerial.lockForRead();
+
+    while (!serial->atEnd())
+    {
+        serial->getChar(&c);
+
+        if (c> 0xF0 && search) // the order number byte (custom protocol for chained devices)
+        {
+            search = 0;
+            port = (c & 0x0F) - 1; //last 4 bits // port = 0..7
+            msg.clear();
+            pos=0;
+            msgLen=0;
+            continue;
+        }
+        if (search) { // if message start is not found
+            continue;
+        }
+        if (pos==0) // msg start byte was found
+        {
+
+            if (c ==  midiDefs::button ||
+                    // c ==  midiDefs::vpot ||
+                    (c>=midiDefs::faderFirst && c<=midiDefs::faderFirst+7 ))
+            {
+                msgLen = 3;
+            }
+            else {  // unexpected message or error
+                search =1;
+                continue;
+            }
+        }
+        if (pos < msgLen)
+        {
+            msg.push_back(c);
+            pos++;
+        }
+        if (pos == msgLen)
+        {
+            midiout[port]->sendMessage(& msg);
+            search = 1;
+        }
+
+    }
+
+    lockSerial.unlock();
+}
+
+void midiprocess::sendUartToChain()
+{
+    int msgLen  = midireader->curMsg.size();
+
+    lockSerial.lockForWrite();
+
+    serial->putChar(0xF0 | midireader->curDestination); // custom protocol for chained devices //cur dest = 1..8
+    for (int i=0; i<msgLen; i++)
+    {
+        serial->putChar(midireader->curMsg.at(i));
+    }
+
+    lockSerial.unlock();
+
+    emit startReadingUsb();
+}
 
 bool midiprocess::isUsbConnected(void)
 {
@@ -145,25 +456,84 @@ bool midiprocess::initUsbMidi(int nPorts)
     return 0;
 }
 
-
-void midiprocess::sendUsbMidi(std::vector<unsigned char> message, int port)
+void midiprocess::parseMackie(std::vector<unsigned char> msg)
 {
-    //    message.push_back( 0xF6 ); // push back means append
-    //    midiout->sendMessage( &message );
-    //    unsigned int i, nBytes=8;
-    //    for ( int n=0; n<2; n++ )
-    //    {
-    //        message.clear();
-    //        message.push_back( 240 );
-    //        for ( i=0; i<nBytes; i++ ) message.push_back( i % 128 );
-    //        message.push_back( 247 );
-    //        midiout->sendMessage( &message );
-    //    }
+
+    int type=0;
+    int chn =0;
+
+    if (msg.front()>= midiDefs::faderFirst && msg.front()<= midiDefs::faderFirst+7)
+    {
+        chn = msg.front() - midiDefs::faderFirst;
+        channels[chn].faderPosition = ((int)msg.at(1)<<8) | msg.at(2);
+        emit faderUpdated(chn,channels[chn].faderPosition );
+        qDebug()<<"fader position: "<<channels[chn].faderPosition;
+    }
+    else
+    {
+        switch (msg.front())
+        {
+        case (midiDefs::vpot): return;
+            break;
+        case (midiDefs::button):
+            type = (int)(msg.at(1)/8);
+            chn = msg.at(1)%8;
+
+            switch (type)
+            {
+            case 0:
+                channels[chn].recArmed = (msg.at(2)!=0);
+                emit RecArmed(chn, channels[chn].recArmed);
+                break;
+            case 1:
+                channels[chn].solo = (msg.at(2)!=0);
+                emit Soloed(chn, channels[chn].solo);
+                break;
+            case 2:
+                channels[chn].mute = (msg.at(2)!=0);
+                emit Muted(chn, channels[chn].mute);
+                break;
+            case 3:
+                channels[chn].selected = (msg.at(2)!=0);
+                emit Selected(chn, channels[chn].selected);
+                break;
+            }
+
+            break;
+        case (midiDefs::displayBlockStart):
+
+            if (msg.size()<14) {return;}
+
+            if(msg.at(1) ==0 && msg.at(2) ==102 && msg.at(3) ==20 && msg.at(4) ==18)// 240 00 102 20 18
+            {
+                chn = (int)(msg.at(5)/7);
+            }
+            else
+            {
+                return;
+            }
+            for (int i=0; i<6; ++i)
+            {
+                channels[chn].name[i]=msg.at(7+i);
+            }
+            emit nameUpdated(chn, QString (channels[chn].name));
+            break;
+
+        case (midiDefs::vuMeter):
+            chn = msg.at(1)/16;
+            channels[chn].vuMeter =  msg.at(1)%16;
+            emit VUupdated(chn, channels[chn].vuMeter);
+            break;
+        }
+    }
+
+    emit startReadingUsb();
 }
+
 
 bool midiprocess::initUart(unsigned int baud)
 {   
-    serial->setPortName("ttyS0");
+    serial->setPortName("/dev/ttyS0");
     serial->open(QIODevice::ReadWrite);
     serial->setBaudRate(baud);
     serial->setDataBits(QSerialPort::Data8);
@@ -179,71 +549,79 @@ bool midiprocess::initUart(unsigned int baud)
     return 0;
 }
 
-int midiprocess::getChainedCount(void)
+int midiprocess::getDevicesCount(void)
 {
     QByteArray tx,rx;
-    tx.append(0x00 | midiDefs::fourByteMsg);
+
     tx.append(255);
     tx.append(255);
     tx.append(1);
     serial->write(tx);
 
-    serial->waitForReadyRead(30000);
-    rx = serial->readAll();
+    serial->waitForReadyRead(3000);
+
+    while (rx.size()<3)
+    {
+        rx.append(serial->readAll());
+    }
+
     tx.chop(1);
-    if (rx.contains(tx) && rx.size() == 4)
+    if (rx.contains(tx) && rx.size() == 3)
     {
         return (int)rx.back();
     }
     return 1;
 }
 
+// returns the device ord number
 int midiprocess::checkIfChained(void)
 {
     QByteArray tx,rx;
-    tx.append(0x00 | midiDefs::fourByteMsg);
+
     tx.append(255);
     tx.append(255);
-    rx = serial->readAll();
-    if (rx.contains(tx) && rx.size() == 4)
+    while (rx.size()<3)
+    {
+        rx.append(serial->readAll());
+    }
+    if (rx.contains(tx) && rx.size() == 3)
     {
         return (int)rx.back();
     }
     return 0;
 }
 
-void inputCallback(double deltatime, std::vector< unsigned char > *message, void *)
-{  
-    unsigned int nBytes = message->size();
-    bytesCount[0]+=nBytes;
 
-    int msgType = (int)message->at(0);
 
-    switch (msgType)
+UsbMidiReader::UsbMidiReader(RtMidiIn *ports[], int ndevices)
+{
+    _ports = *ports;
+    _nDevices = ndevices;
+    curMsg.reserve(32);
+}
+
+void UsbMidiReader::processInputData()
+{
+    for (int i = 0; i<_nDevices-1; i++)
     {
-    case midiDefs::vpot: return; break; // we have no v-pots
-    case midiDefs::button:
-        break;
-    case midiDefs::vuMeter:
-        break;
-    case midiDefs::displayBlockStart:
-        break;
-    default:
-        for ( unsigned int i=0; i<nBytes; i++ )
-            qDebug() << "Byte " << i << " = " << (int)message->at(i)
-                     <<" - "<< QChar((int)message->at(i)) << ", ";
-        break;
-    }
+        _ports[i].getMessage(&curMsg);
+        if (!curMsg.empty())
+        {
+            if (curMsg.front() == midiDefs::vpot || curMsg.size()>16)
+            {
+                continue; // skip v-pot messages and long info messages
+            }
+            curDestination = i+1;
 
-    if (msgType>midiDefs::faderFirst && msgType<midiDefs::faderFirst+8)
-    {
-        // updateFader(1);
-    }
-
-    if ( nBytes > 0 )
-    {
-        qDebug()  << "# of bytes = " << nBytes << ", stamp = " << deltatime;
+            if (i == 0)
+            {
+                emit usbMsgForDevice(curMsg);
+            }
+            else
+            {
+                emit usbMsgForUart();
+            }
+        }
     }
 
 }
-

@@ -22,6 +22,7 @@ public:
 
     int maxVu = 0;
     void setVU (int db);
+    void setChannelName(char* name);
 
 
 private:

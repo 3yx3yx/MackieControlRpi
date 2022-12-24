@@ -5,26 +5,30 @@
 #include <stdbool.h>
 #include "bcm2835.h"
 #include <st7789.h>
+#include <QTimer>
+#include <QMutex>
+#include <QReadWriteLock>
 
 
 // pin defines
 
-
-#define PIN_SHIFT_OUT_RESET 5
+#define SPI_SHIFT_LATCH 21
+#define PIN_SHIFT_OUT_DATA 13
+#define PIN_SHIFT_OUT_CLK 5
 #define PIN_SHIFT_OUT_LATCH 6
 #define PIN_SHIFT_IN_CS 26
 #define PIN_SHIFT_IN_LATCH 19
 #define PIN_SHIFT_IN_DATA 20
 #define PIN_SHIFT_IN_CLK 16
-#define N_SHIFT_REG_OUT  1 // number of shift registers
-#define N_SHIFT_REG_IN  1
+
+#define N_SHIFT_REG_OUT  8 // number of shift registers
+#define N_SHIFT_REG_IN  8
+#define N_SHIFT_SPI 1
+
 
 
 #define ADS1015_CONVERSION_DELAY    1
 #define ADS1115_CONVERSION_DELAY    8
-
-
-// Kept #defines a bit in line with Adafruit library.
 
 // REGISTERS
 #define ADS1X15_REG_CONVERT         0x00
@@ -124,44 +128,72 @@ differs for different devices, check datasheet or readme.md
 #define ADS_ADDR_2 0x49
 
 
-typedef struct
-{
-    bool mute;
-    bool recArmed;
-    bool solo;
-    bool selected;
-    bool faderTouched;
 
-    int vuMeter;
 
-    float adcValue;
-    int faderPosition;
-    char name[6];
-
-}channelData;
-
-class Gpio {
+class Gpio : public QObject {
+    Q_OBJECT
 public:
-    Gpio(){
+    Gpio()
+    {
         gpioInit();
     }
 
-    ~Gpio();
+    ~Gpio() = default;
 
-    DisplayTFT* displays;
-    void updateLeds (void);
-    void updateFader (int);
-    void shiftOut (int out, int state);
-    void shiftWriteNB (char* tx,int len);
-    int shiftRead(char* rx = nullptr);
-    static const int toggle = 2;
-    uint16_t readADC (int channel);
+    void shiftWriteToBuf(int byte, int bit, int state);
+    void shiftReset();
+    void shiftLoadToRegisters();
+    void SPIshiftOut (int out, int state);
+    void SPIshiftReset ();
+
+    int  shiftRead(char* rx = nullptr);
+
+    static const int shiftToggle = 2;
+
+
+public slots:
+    void setFader(int channel, int pos);
+    void onRecArmed (int channel, bool state);
+    void onSoloed (int channel, bool state);
+    void onMuted (int channel, bool state);
+    void onSelected (int channel, bool state);
+
+signals:
+
+    void faderMoved  (int channel, int val);
+    void recArmPressed (int channel);
+    void soloPressed (int channel);
+    void mutePressed (int channel);
+    void selectPressed (int channel);
+
+private slots:
+    void update();
 
 private:
-    char rxPrev[N_SHIFT_REG_IN];
-    unsigned int adcMin[8],adcMax[8];
+    QReadWriteLock lockShiftReg;
+    QReadWriteLock lockTargetADC;
+    QTimer* timer;
+
+    uint16_t
+    adcMin[8]={},
+    adcMax[8]={},
+    adcCurrent[8]={},
+    adcTarget[8]={};
+
+    uint8_t ShiftBuffer[8] = {0};
+
     bool gpioInit (void);
-    bool calibrateFaders(void);
+    void calibrateFaders(void);
+    const int faderMax = 0xFFFF;
+    const int faderMin = 0;
+    uint16_t readADC (int channel);
+    void stopMotor(int channel);
+    void motorUp(int channel);
+    void motorDown(int channel);
+    int getFaderPos(int channel, int adc);
+
+    void buttonPressedEmmiter(int channel, int type);
+
 };
 
 

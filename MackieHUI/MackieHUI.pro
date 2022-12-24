@@ -14,7 +14,6 @@ LIBS += -L/home/ilia/rpi-qt/sysroot/usr/include/alsa/asoundlib.h -lasound\
 
 SOURCES += \
     DisplayThread.cpp \
-    MidiCallbacks.cpp \
     RtMidi.cpp \
     bcm2835.c \
     infodisplay.cpp \
@@ -26,7 +25,6 @@ SOURCES += \
 
 HEADERS += \
     DisplayThread.h \
-    MidiCallbacks.h \
     RtMidi.h \
     bcm2835.h \
     infodisplay.h \

@@ -5,34 +5,38 @@
 #include <cstring>
 #include <memory.h>
 #include <QRect>
+#include <mygpio.h>
 
 class DisplayThread : public QThread
 {
     Q_OBJECT
 public:
-    DisplayThread() {
-        disp = new DisplayTFT;       
-        updateRectNext.setRect(0,0,240,240);
-        updateRectPrev.setRect(0,0,240,240);
-    }
-    ~DisplayThread(){
-        delete disp;
-    }
-    DisplayTFT* disp;
-    uint16_t (*frameBufferNext)[8][240*240];
-    uint16_t (*frameBufferPrev)[8][240*240];
-    uint16_t frameBuffer1[8][240*240] = {};
-    uint16_t frameBuffer2[8][240*240] = {};
+    DisplayThread(Gpio* gpioInstance);
+    ~DisplayThread();
 
-    QRect updateRectNext;
-    QRect updateRectPrev;
-    void update (int display=1);
-    void run() override{
-        update ();
+    DisplayTFT* disp;
+
+    typedef struct
+    {
+        uint8_t x;
+        uint8_t y;
+        uint16_t color;
+        uint8_t display;
+    } pixel;
+
+    std::vector<pixel> pixels;
+
+    void run() override
+    {
+      update ();
     }
 
 private:
-    QRect _rect;
+    Gpio* _gpio;
+    void update ();
+
+
+    void setCurrentDisplay(int display);
 };
 
 #endif // DISPLAYTHREAD_H
