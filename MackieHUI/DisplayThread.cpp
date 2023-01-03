@@ -1,18 +1,51 @@
 #include <stdint.h>
 #include "DisplayThread.h"
 #include "QDebug"
-void DisplayThread::update (int display)
+DisplayThread::DisplayThread(Gpio *gpioInstance)
 {
-    int x0=0;
-    int y0=0;
-    int w=0;
-    int h=0;
+    _gpio = gpioInstance;
 
-    disp->SetCurrentDisplay(display);
+    pixels.reserve(240*240*8);
 
-    updateRectPrev.getRect(&x0,&y0,&w,&h);
+    // init the lcds:
+    for (int i=0; i<8; i++)
+    {
+        _gpio->SPIshiftOut(i,1);
+    }
 
-    disp->DrawImage((*frameBufferPrev)[display],x0,y0,w,h);
-
-   // qDebug()<<"upd rect"<<x0<<y0<<w<<h;
+    disp = new DisplayTFT;
 }
+
+DisplayThread::~DisplayThread()
+{
+    delete disp;
+}
+
+void DisplayThread::update ()
+{
+    for (auto pix : pixels)
+    {
+        setCurrentDisplay(pix.display);
+#ifdef TEST
+        if (pix.display == 0)
+#endif
+        disp->DrawPixel(pix.x,pix.y,pix.color);
+    }
+    pixels.clear();
+    emit ready();
+}
+
+void DisplayThread::setCurrentDisplay(int display)
+{
+    static int prevDisp=-1;
+    if (display == prevDisp)
+    {
+        return;
+    }
+    usleep(10);
+    _gpio->SPIshiftReset();
+    _gpio->SPIshiftOut(display,1);
+    prevDisp = display;
+}
+
+

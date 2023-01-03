@@ -59,34 +59,22 @@
 
 #define ST7789_X_Start          0
 #define ST7789_Y_Start          0
-#define PIN_DISPLAY_CS_1 22
-#define PIN_DISPLAY_CS_2 22
-#define PIN_DISPLAY_CS_3 22
 
-#define PIN_DISPLAY_CS_4 22
-#define PIN_DISPLAY_CS_5 22
-#define PIN_DISPLAY_CS_6 22
-#define PIN_DISPLAY_CS_7 22
-#define PIN_DISPLAY_CS_8 22
 #define PIN_DISPLAY_DC 27
 #define PIN_DISPLAY_RS 17
+#define PIN_DISPLAY_CS 22
 
 class DisplayTFT
 {
 public:
-    DisplayTFT()
 
+    DisplayTFT()
     {
-//        Init(240,240);
-//        for (int i = 0; i<8; i++)
-//        {
-            //SetCurrentDisplay(i);
-            Init(240,240);
-//        }
-//        bcm2835_delay(100);
+        Init(240,240);
     }
 
-    void SetCurrentDisplay (unsigned int display) {CS_current=CS_pins[display];}
+    ~DisplayTFT() = default;
+
     void DrawImage (uint16_t* fbuff={},int x0=0,int y0=0,int w=240, int h=240);
     void FillScreen(uint16_t color);
     void FillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
@@ -101,9 +89,7 @@ public:
 
 
 private:
-    const unsigned int CS_pins[8]={PIN_DISPLAY_CS_1,PIN_DISPLAY_CS_2,PIN_DISPLAY_CS_3,PIN_DISPLAY_CS_4,
-                             PIN_DISPLAY_CS_5,PIN_DISPLAY_CS_6,PIN_DISPLAY_CS_7,PIN_DISPLAY_CS_8,};
-    unsigned int CS_current =PIN_DISPLAY_CS_1 ;
+
     void Init(int Width, int Height);
     void spiWrite (uint16_t* tbuf, uint32_t len);
     uint8_t ST7789_Width, ST7789_Height;
