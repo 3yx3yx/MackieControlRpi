@@ -30,7 +30,8 @@ public:
     {
       update ();
     }
-
+signals:
+    void ready();
 private:
     Gpio* _gpio;
     void update ();

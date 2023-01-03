@@ -1,8 +1,8 @@
 #include "mygpio.h"
 #include <QDebug>
+#include <unistd.h>
 
-
-
+int startup_key_combo_detected = 0;
 
 bool Gpio::gpioInit(void)
 {
@@ -35,11 +35,42 @@ bool Gpio::gpioInit(void)
         printf("bcm2835_i2c_begin failed. Are you running as root??\n");
         return 0;
     }
-    bcm2835_i2c_set_baudrate(1000000);
-
-    calibrateFaders();
 
     timer = new QTimer(this);
+    for(int i = 0; i<N_CHANNELS; i++)
+    {
+        for (int j = 0; j<8; j++)
+        {
+            shiftWriteToBuf(i,j,1);
+            shiftLoadToRegisters();
+            usleep(25000);
+            shiftWriteToBuf(i,j,0);
+            shiftLoadToRegisters();
+        }
+    }
+
+
+
+    char rx[8] = {};
+    shiftRead(rx);
+    if (rx[0] == 0x0F)  startup_key_combo_detected = 1;
+    if (rx[0] == 0x0E)  startup_key_combo_detected = 2;
+
+    if (startup_key_combo_detected)
+    {
+        for (int i = 0; i<8; i++)
+        {
+            shiftWriteToBuf(i,0,1);
+            shiftLoadToRegisters();
+            return 0;
+        }
+    }
+#ifdef TEST
+    adcMin[0] = 15;
+    adcMax[0] = 24500;
+#else
+    calibrateFaders();
+#endif
     connect(timer, SIGNAL(timeout()),this, SLOT(update()));
     timer->setSingleShot(1);
     timer->start(30);
@@ -47,81 +78,43 @@ bool Gpio::gpioInit(void)
     return stat;
 }
 
-void Gpio::calibrateFaders() // this function is recursive
-{
-    int adcPrev[8]={INT_MAX};
-    const int error_rate = 10;
-
-    static bool down = 1;
-
-    for (int i = 0; i< 8; i++)
+void Gpio::calibrateFaders()
+{   
+    qDebug()<<"calibrating faders";
+    for (int i=0; i<N_CHANNELS; i++) setFader(i,faderMax);
+    do
     {
-        if (down)
-        {
-            motorDown(i);
-        }
-        else
-        {
-            motorUp(i);
-            adcPrev[i] = 0;
-        }
+        qDebug()<<"calibrating faders max";
+        update();
+        usleep(1500*1000);
+    }while (faderTouchEvent);
 
-    }
-    bool ready[8] = {0};
-    bool complete = 0;
-    while (!complete)
+    for (int i=0; i<N_CHANNELS; i++) stopMotor(i);
+    usleep(200*1000);
+
+    for (int i=0; i<N_CHANNELS; i++)
     {
-        for (int i = 0; i< 8; i++)
-        {
-            if (ready[i])
-            {
-                continue;
-            }
-            int adc = readADC(i);
-            if (down)
-            {
-                if (adc >= adcPrev[i] - error_rate)
-                {
-                    stopMotor(i);
-                    ready[i] = 1;
-                    adcMin[i]=adc;
-                }
-            }
-            else
-            {
-                if (adc <= adcPrev[i] + error_rate)
-                {
-                    stopMotor(i);
-                    ready[i] = 1;
-                    adcMax[i]=adc;
-                }
-            }
-
-        }
-
-        complete = 1;
-
-        for (int i=1; i<8; i++)
-        {
-            if(ready[i]&&ready[i-1])
-            {
-                continue;
-            }
-            else
-            {
-                complete = 0;
-                break;
-            }
-        }
-
+        adcMax[i] = readADC(i);
+        qDebug()<<"adc max "<< adcMax[i];
+        setFader(i,faderMin);
     }
 
-    if (down)
+    do
     {
-        down = 0;
-        calibrateFaders();
-    }
+        qDebug()<<"calibrating faders min";
+        update();
+        usleep(1500*1000);
+    }while (faderTouchEvent);
 
+    for (int i=0; i<N_CHANNELS; i++) stopMotor(i);
+
+    usleep(200*1000);
+
+    for (int i=0; i<N_CHANNELS; i++)
+    {
+        adcMin[i] = readADC(i);
+        qDebug()<<"adc min "<< adcMin[i];
+    }
 }
 
 uint16_t Gpio::readADC(int channel)
@@ -132,14 +125,14 @@ uint16_t Gpio::readADC(int channel)
     switch (channel)
     {
     default: return 0; break;
-    case 1:readmode = ADS1X15_READ_0;addr = ADS_ADDR_1; break;
-    case 2:readmode = ADS1X15_READ_1;addr = ADS_ADDR_1; break;
-    case 3:readmode = ADS1X15_READ_2;addr = ADS_ADDR_1; break;
-    case 4:readmode = ADS1X15_READ_3;addr = ADS_ADDR_1; break;
-    case 5:readmode = ADS1X15_READ_0;addr = ADS_ADDR_2; break;
-    case 6:readmode = ADS1X15_READ_1;addr = ADS_ADDR_2; break;
-    case 7:readmode = ADS1X15_READ_2;addr = ADS_ADDR_2; break;
-    case 8:readmode = ADS1X15_READ_3;addr = ADS_ADDR_2; break;
+    case 0:readmode = ADS1X15_READ_0;addr = ADS_ADDR_1; break;
+    case 1:readmode = ADS1X15_READ_1;addr = ADS_ADDR_1; break;
+    case 2:readmode = ADS1X15_READ_2;addr = ADS_ADDR_1; break;
+    case 3:readmode = ADS1X15_READ_3;addr = ADS_ADDR_1; break;
+    case 4:readmode = ADS1X15_READ_0;addr = ADS_ADDR_2; break;
+    case 5:readmode = ADS1X15_READ_1;addr = ADS_ADDR_2; break;
+    case 6:readmode = ADS1X15_READ_2;addr = ADS_ADDR_2; break;
+    case 7:readmode = ADS1X15_READ_3;addr = ADS_ADDR_2; break;
     }
 
     config |= readmode;                         // bit 12-14
@@ -152,7 +145,7 @@ uint16_t Gpio::readADC(int channel)
     config |= ADS1X15_COMP_QUE_NONE; // bit 0..1   ALERT mode
 
     bcm2835_i2c_setSlaveAddress(addr);
-
+    bcm2835_i2c_set_baudrate(1000000);
     char buffTx[3] = {};
     buffTx[0] = ADS1X15_REG_CONFIG;
     buffTx[1] = config>> 8;
@@ -171,23 +164,29 @@ void Gpio::stopMotor(int channel)
     shiftWriteToBuf(channel, 5, 0);
     shiftWriteToBuf(channel, 6, 0);
     shiftLoadToRegisters();
+    //qDebug()<< "stopped motor "<< channel;
 }
 
 void Gpio::motorUp(int channel)
 {
-    shiftWriteToBuf(channel, 5, 0);
+    shiftWriteToBuf(channel, 6, 0);
+    shiftWriteToBuf(channel, 5, 1);
     shiftLoadToRegisters();
+    //qDebug()<< "moving motor up "<< channel;
+
 }
 
 void Gpio::motorDown(int channel)
 {
-    shiftWriteToBuf(channel, 6, 0);
+    shiftWriteToBuf(channel, 5, 0);
+    shiftWriteToBuf(channel, 6, 1);
     shiftLoadToRegisters();
+    //qDebug()<< "moving motor down "<< channel;
 }
 
 void Gpio::shiftWriteToBuf(int byte, int bit, int state)
 {
-    if (byte>=N_SHIFT_REG_OUT || bit> 8) {return;}
+    if (byte>=N_SHIFT_REG_OUT || bit> 7) {return;}
 
     lockShiftReg.lockForWrite();
 
@@ -201,6 +200,7 @@ void Gpio::shiftWriteToBuf(int byte, int bit, int state)
     default: return; break;
     }
 
+
     lockShiftReg.unlock();
 }
 
@@ -209,7 +209,7 @@ void Gpio::shiftLoadToRegisters()
     lockShiftReg.lockForRead();
 
     bcm2835_gpio_write(PIN_SHIFT_OUT_LATCH, HIGH);
-    for (int byte=0; byte<N_SHIFT_REG_OUT; byte++)
+    for (int byte=N_SHIFT_REG_OUT-1; byte>=0; byte--)
     {
         for(int bit=1; bit<9; bit++)
         {
@@ -222,10 +222,12 @@ void Gpio::shiftLoadToRegisters()
                 bcm2835_gpio_write(PIN_SHIFT_OUT_DATA,LOW);
             }
             bcm2835_gpio_write(PIN_SHIFT_OUT_CLK,HIGH);
+            usleep(1);
             bcm2835_gpio_write(PIN_SHIFT_OUT_CLK,LOW);
         }
     }
     bcm2835_gpio_write(PIN_SHIFT_OUT_LATCH, LOW);
+    usleep(10);
     bcm2835_gpio_write(PIN_SHIFT_OUT_LATCH, HIGH);
 
     lockShiftReg.unlock();
@@ -247,17 +249,15 @@ int Gpio::shiftRead(char* rx)
     {
         for(int bit=1; bit<9; bit++)
         {
-
             if(!bcm2835_gpio_lev(PIN_SHIFT_IN_DATA))
             {
-                *rx |= ((char)1<<(8-bit));
+                rx[byte] |= ((char)1<<(bit-1));
                 event =(8*len) -(8*byte + bit) ;
             }
-
             bcm2835_gpio_write(PIN_SHIFT_IN_CLK,HIGH);
+            usleep(1);
             bcm2835_gpio_write(PIN_SHIFT_IN_CLK,LOW);
         }
-        rx++;
     }
     bcm2835_gpio_write(PIN_SHIFT_IN_CS, HIGH);
 
@@ -268,17 +268,22 @@ int Gpio::shiftRead(char* rx)
 
 int Gpio::getFaderPos(int channel, int adc)
 {
+    if (adc< adcMin[channel]) adc = adcMin[channel];
+
     int pos =
             (faderMax- faderMin)
             *(adc-adcMin[channel])
             /(adcMax[channel]-adcMin[channel])
-            +0;
-    pos = std::abs(pos);
+            +faderMin;
+
+    if (pos> faderMax) pos = faderMax;
+
     return pos;
 }
 
 void Gpio::buttonPressedEmmiter(int channel, int type)
 {
+    //qDebug()<< "btn pressed "<< channel << type;
     switch (type)
     {
     case 0: emit recArmPressed(channel); break;
@@ -290,15 +295,12 @@ void Gpio::buttonPressedEmmiter(int channel, int type)
 
 void Gpio::setFader(int channel, int pos)
 {
-    lockTargetADC.lockForWrite();
-
+    QMutexLocker locker (&mutexAdc);
     adcTarget[channel] =
             (adcMax[channel] - adcMin[channel])
             *(pos-0)
             /(faderMax - faderMin)
             +adcMin[channel];
-
-    lockTargetADC.unlock();
 }
 
 
@@ -325,33 +327,37 @@ void Gpio::onSelected(int channel, bool state)
 
 void Gpio::update()
 {
-    const int faderTouch = 4;
-    char shiftReadBuf[8];
-    static char shiftReadBufPrev[8];
+    static const int faderTouch = 4;
+    char shiftReadBuf[8] = {0};
+    static char shiftReadBufPrev[8] = {0};
+    faderTouchEvent = 0;
 
     shiftRead(shiftReadBuf);
 
-    for (int channel = 0; channel < 8; channel++)
+    for (int channel = 0; channel < N_CHANNELS; channel++)
     {
         uint16_t adc = readADC(channel);
-        lockTargetADC.lockForRead();
+        QMutexLocker locker (&mutexAdc);
         uint16_t target = adcTarget[channel];
-        lockTargetADC.unlock();
+        locker.unlock();
         bool faderIsTouched=0;
 
-        for(int type = 0; type<5; type++)
+        for(int type = 0; type<8; type++)
         {
-            bool stateNow = shiftReadBuf[channel] & (char)1<<(7-type);
-            bool statePrev = shiftReadBufPrev[channel] & (char)1<<(7-type);
-            if (stateNow==statePrev && type!=faderTouch)
+            bool stateNow = shiftReadBuf[channel] & (uint8_t)1<<(7-type);
+            bool statePrev = shiftReadBufPrev[channel] & (uint8_t)1<<(7-type);
+
+            if ((stateNow==statePrev && type!=faderTouch)
+                    || !stateNow)
             {
                 continue;
             }
 
+            //qDebug()<<"type "<<type<< "state now "<< stateNow<<"state prev "<< statePrev;
+
             if (type!=faderTouch)
             {
                 buttonPressedEmmiter(channel, type);
-                shiftWriteToBuf(channel, faderTouch, 0);
             }
             else
             {
@@ -359,17 +365,24 @@ void Gpio::update()
                 stopMotor(channel);
                 shiftWriteToBuf(channel, faderTouch, 1);
                 faderIsTouched = 1;
+                faderTouchEvent = 1;
             }
         }
 
         shiftReadBufPrev[channel] = shiftReadBuf[channel] ;
 
+
         if (faderIsTouched)
         {
             continue;
         }
+        else
+        {
+            shiftWriteToBuf(channel, faderTouch, 0);
+        }
 
-        if (adc>= target-30 && adc<= target+30)
+
+        if (adc>= target-400 && adc<= target+400)
         {
             stopMotor(channel);
         }
@@ -416,7 +429,7 @@ void Gpio::SPIshiftOut(int out, int state)
 
 
     bcm2835_gpio_write(SPI_SHIFT_LATCH, HIGH);
-    for (int i=0; i<N_SHIFT_REG_OUT; i++)
+    for (int i=0; i<N_SHIFT_SPI; i++)
     {
         bcm2835_spi_transfer(mask[i]);
     }

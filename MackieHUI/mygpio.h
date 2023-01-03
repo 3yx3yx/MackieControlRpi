@@ -10,10 +10,12 @@
 #include <QReadWriteLock>
 
 
+#define N_CHANNELS 8
+
 // pin defines
 
 #define SPI_SHIFT_LATCH 21
-#define PIN_SHIFT_OUT_DATA 13
+#define PIN_SHIFT_OUT_DATA 25
 #define PIN_SHIFT_OUT_CLK 5
 #define PIN_SHIFT_OUT_LATCH 6
 #define PIN_SHIFT_IN_CS 26
@@ -170,22 +172,24 @@ private slots:
     void update();
 
 private:
+    QRecursiveMutex mutexAdc;
     QReadWriteLock lockShiftReg;
-    QReadWriteLock lockTargetADC;
     QTimer* timer;
 
     uint16_t
-    adcMin[8]={},
-    adcMax[8]={},
+    adcMin[8]={0},
+    adcMax[8]={0xFFFF},
     adcCurrent[8]={},
     adcTarget[8]={};
 
     uint8_t ShiftBuffer[8] = {0};
 
+    bool faderTouchEvent = 0;
+
     bool gpioInit (void);
     void calibrateFaders(void);
-    const int faderMax = 0xFFFF;
-    const int faderMin = 0;
+    const int faderMax = 0x3FFF;
+    const int faderMin = 127;
     uint16_t readADC (int channel);
     void stopMotor(int channel);
     void motorUp(int channel);

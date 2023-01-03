@@ -68,22 +68,12 @@ class DisplayTFT
 {
 public:
 
-    //DisplayTFT(const DisplayTFT& obj) = delete;
-
     DisplayTFT()
     {
         Init(240,240);
     }
 
-//    static DisplayTFT& getInstance()
-//    {
-//        if (instance == NULL)
-//        {
-//            instance = new DisplayTFT();
-//        }
-//        return instance;
-
-//    }
+    ~DisplayTFT() = default;
 
     void DrawImage (uint16_t* fbuff={},int x0=0,int y0=0,int w=240, int h=240);
     void FillScreen(uint16_t color);
@@ -99,8 +89,6 @@ public:
 
 
 private:
-   // DisplayTFT() = default;
-    //static DisplayTFT* instance;
 
     void Init(int Width, int Height);
     void spiWrite (uint16_t* tbuf, uint32_t len);

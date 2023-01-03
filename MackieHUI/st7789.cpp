@@ -21,6 +21,7 @@ void DisplayTFT::Init(int Width, int Height)
     usleep(10*1000);
     ST7789_DisplayPower(1);
     usleep(10*1000);
+    //FillScreen(GREEN);
 }
 
 void DisplayTFT::ST7789_HardReset(void)

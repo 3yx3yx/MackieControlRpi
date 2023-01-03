@@ -3,11 +3,12 @@
 
 
 #include "RtMidi.h"
-#include "qreadwritelock.h"
+#include "qmutex.h"
+#include <QTimer>
 
 #include <QtSerialPort/QSerialPort>
 
-
+extern int startup_key_combo_detected;
 
 QT_BEGIN_NAMESPACE
 namespace midi {
@@ -62,19 +63,18 @@ struct midiDefs {
      */
         displayBlockStart=240,
         /*the display data is
-     * 240 00 102 20 18
+     * 240 00 00 102 20 18
      * channelN * 7   0, 7 .. 21, 28 ..
-     * some fixed byte (?)
+     * unused byte
      * 6 characters
      * 247
      */
-        twoByteMsg = 0x0D,
-        fourByteMsg = 0x0B // start 4 byte message or sysex continue
 
     };
 };
 
 class UsbMidiReader;
+class SerialRepeater;
 
 class midiprocess : public QObject
 {
@@ -84,29 +84,10 @@ public:
     ~midiprocess();
 
 
-
+    QString connectionStatus;
     void sendMackieMsg (unsigned int channel, int type, int value);
     inline bool getUsbStatus (void) {return usbStat;}
     int getDeviceOrderNumber(void) {return deviceOrderNumber;}
-
-
-    typedef struct
-    {
-        bool mute;
-        bool recArmed;
-        bool solo;
-        bool selected;
-        bool faderTouched;
-
-        int vuMeter;
-
-        int faderPosition;
-        char name[7];
-
-    }channelData;
-
-    channelData channels[8] = {{0,0,0,0,0,0,0,"chname"}};
-
 
 signals:
 
@@ -116,42 +97,43 @@ signals:
     void Soloed (int channel, bool state);
     void Muted (int channel, bool state);
     void Selected (int channel, bool state);
-
     void VUupdated (int channel, int val);
     void nameUpdated(int channel, QString name);
-
     void faderUpdated (int channel, int val);
+    void deviceNumChanged();
+    void statusUpdated(QString s);
 
 public slots:
-
     void onfaderMoved  (int channel, int val);
-
     void onrecArmPressed (int channel);
     void onsoloPressed (int channel);
     void onmutePressed (int channel);
     void onselectPressed (int channel);
 
+
 private slots:
     void serialFilter(void);
-    void serialGetSlowMidi(void);
-    void serialToUsbRepeat(void);
-    void sendUartToChain();
-    void parseMackie(std::vector<unsigned char> msg);
+    void serialGetSlowMidi(void);  
+    void parseMackie(QByteArray msg);
+    void timerSlot();
+
 private:
-
-    QReadWriteLock lockSerial;
-    int checkIfChained (void);
-
+    QRecursiveMutex mutexSerial;
     QSerialPort* serial;
     UsbMidiReader* midireader;
-
     RtMidiIn* midiin[8];
     RtMidiOut* midiout[8];
+    SerialRepeater* repeater;
+
+    QTimer* timer;
 
     int nDevices=0;
     bool initUsbMidi (int nPorts);
     bool usbStat=0;
+    bool baudChanged = 0;
     bool isUsbConnected(void);
+
+    void sendAskNumberSeq();
 
     typedef enum {
         midi31250=31250, midiHighSpeed=3000000
@@ -166,20 +148,38 @@ private:
 class UsbMidiReader : public QObject {
     Q_OBJECT
 public:
-    UsbMidiReader( RtMidiIn* ports[] , int ndevices);
+    UsbMidiReader(RtMidiIn *ports[8] , int ndevices);
     UsbMidiReader() = default;
     std::vector<unsigned char> curMsg;
     int curDestination=0;
 public slots:
     void processInputData();
 signals:
-    void usbMsgForUart();
-    void usbMsgForDevice(std::vector<unsigned char> msg);
+    void usbMsgForUart(QByteArray msg, int dest);
+    void usbMsgForDevice(QByteArray msg);
+    //void lookForNewMsg();
 private:
-    RtMidiIn* _ports;
+    RtMidiIn* _ports[8];
     int _nDevices;
 };
 
+class SerialRepeater : public QObject {
+    Q_OBJECT
+public:
+    SerialRepeater(RtMidiOut *ports[8], int ndevices);
+    ~SerialRepeater();
+public slots:
+    void process();
+    void sendToChain(QByteArray msg, int dest);
+signals:
 
+private:
+
+    RtMidiOut* _ports[8];
+    QSerialPort* serial;
+    int _nDevices;
+    std::vector<unsigned char> curMsg;
+
+};
 
 #endif // MIDIPROCESS_H

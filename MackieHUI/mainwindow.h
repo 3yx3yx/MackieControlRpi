@@ -36,7 +36,10 @@ public slots:
     void onRecArmed (int channel, bool state);
     void onSoloed (int channel, bool state);
     void onMuted (int channel, bool state);
-
+    void onSelected (int channel, bool state);
+    void refreshVUbars();
+    void onDeviceNChanged();
+    void updateStatusString(QString s);
 
 private slots:
     void updateInterface(void);
@@ -48,15 +51,15 @@ private:
     DisplayThread* dispThread;
     infoDisplay* tftUI[8];
 
-    QElapsedTimer eTimDigits;
-    QElapsedTimer eTimSlider;
+    QImage imgPrev[8];
 
     void processPixels(int display);
-
-
     float rndDecimal (int seed);
+    void updLabelColor (int channel);
 
     struct {
+        const QString BarGray = "QProgressBar::chunk {background-color: gray;}"
+                                "QProgressBar {background-color: rgba(0, 0, 0,0);}";
         const QString SliderGreen =
                 "QSlider::groove:vertical {background: transparent;}QSlider::handle:vertical {height: 20px;background: green;margin: 0 -22px; /* expand outside the groove */ }QSlider::add-page:vertical {background-color: transparent; }QSlider::sub-page:vertical {background: transparent;}";
         const QString SliderYellow =
@@ -71,14 +74,17 @@ private:
                 "QProgressBar {border: 0px solid white;border-radius: 4px;background-color: rgba(0, 0, 0,0);}QProgressBar::chunk { background-color: qlineargradient(spread:pad, x1:0.777, y1:0.352636, x2:0.79602, y2:0.847, stop:0.0547264 rgba(57, 113, 4, 255), stop:0.681592 rgba(124, 196, 17, 255));}";
     }stylesheets;
 
-    QPushButton* recButtons[8] = {ui->rec,ui->rec_2,ui->rec_3,ui->rec_4,
-                                 ui->rec_5,ui->rec_6,ui->rec_7,ui->rec_8};
-    QPushButton* soloButtons[8] = {ui->solo, ui->solo_2, ui->solo_3, ui->solo_4,
-                                   ui->solo_5, ui->solo_6, ui->solo_7, ui->solo_8};
-    QToolButton* muteButtons[8] = {ui->mute, ui->mute_2,ui->mute_3,ui->mute_4,
-                                  ui->mute_5,ui->mute_6,ui->mute_7,ui->mute_8};
-    QLabel* channelNames[8] = {ui->chname1,ui->chname1_2,ui->chname1_3,ui->chname1_4,
-                              ui->chname1_5,ui->chname1_6,ui->chname1_7,ui->chname1_8};
+    QVector <QPushButton*> recButtons;
+    QVector <QPushButton*> soloButtons;
+    QVector <QToolButton*> muteButtons;
+    QVector <QLabel*> channelNames;
+    QVector <QLabel*> channelNumbers;
+    QVector <QProgressBar*> bars;
+    QVector <QSlider*> sliders;
+    QVector <QLabel*> labelTop;
+    QVector <QLabel*> labelBottom;
+
+    void fillObjectVectors ();
 
 };
 #endif // MAINWINDOW_H

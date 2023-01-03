@@ -4755,6 +4755,9 @@
       <pointsize>27</pointsize>
      </font>
     </property>
+    <property name="styleSheet">
+     <string notr="true">color:white</string>
+    </property>
     <property name="frameShape">
      <enum>QFrame::Panel</enum>
     </property>
@@ -4781,6 +4784,9 @@
      <font>
       <pointsize>27</pointsize>
      </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">color:white</string>
     </property>
     <property name="frameShape">
      <enum>QFrame::Panel</enum>
@@ -4809,6 +4815,9 @@
       <pointsize>27</pointsize>
      </font>
     </property>
+    <property name="styleSheet">
+     <string notr="true">color:white</string>
+    </property>
     <property name="frameShape">
      <enum>QFrame::Panel</enum>
     </property>
@@ -4835,6 +4844,9 @@
      <font>
       <pointsize>27</pointsize>
      </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">color:white</string>
     </property>
     <property name="frameShape">
      <enum>QFrame::Panel</enum>
@@ -4863,6 +4875,9 @@
       <pointsize>27</pointsize>
      </font>
     </property>
+    <property name="styleSheet">
+     <string notr="true">color:white</string>
+    </property>
     <property name="frameShape">
      <enum>QFrame::Panel</enum>
     </property>
@@ -4889,6 +4904,9 @@
      <font>
       <pointsize>27</pointsize>
      </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">color:white</string>
     </property>
     <property name="frameShape">
      <enum>QFrame::Panel</enum>
@@ -4917,6 +4935,9 @@
       <pointsize>27</pointsize>
      </font>
     </property>
+    <property name="styleSheet">
+     <string notr="true">color:white</string>
+    </property>
     <property name="frameShape">
      <enum>QFrame::Panel</enum>
     </property>
@@ -4943,6 +4964,9 @@
      <font>
       <pointsize>27</pointsize>
      </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">color:white</string>
     </property>
     <property name="frameShape">
      <enum>QFrame::Panel</enum>
@@ -5983,6 +6007,22 @@ QSlider::sub-page:vertical {
      <enum>Qt::Vertical</enum>
     </property>
    </widget>
+   <widget class="QLabel" name="statuslabel">
+    <property name="geometry">
+     <rect>
+      <x>1186</x>
+      <y>10</y>
+      <width>721</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>status</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+    </property>
+   </widget>
    <zorder>backgrnd</zorder>
    <zorder>VUBar_2</zorder>
    <zorder>chname1</zorder>
@@ -6064,6 +6104,7 @@ QSlider::sub-page:vertical {
    <zorder>slider6</zorder>
    <zorder>slider7</zorder>
    <zorder>slider8</zorder>
+   <zorder>statuslabel</zorder>
   </widget>
  </widget>
  <resources>

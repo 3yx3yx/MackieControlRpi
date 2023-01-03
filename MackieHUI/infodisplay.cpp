@@ -33,14 +33,20 @@ QRect infoDisplay::getClipGeom()
 void infoDisplay::setVU(int db)
 {
     ui->VUbar->setValue(db);
+
     ui->lcdNumber->display(maxVu);
     if (db>-2) ui->L_Clip->setVisible(1);
     else ui->L_Clip->setVisible(0);
 }
 
-void infoDisplay::setChannelName(char *name)
+void infoDisplay::setChannelName(QString name)
 {
-    ui->L_Name->setText(QString(name));
+    ui->L_Name->setText(name.remove(' '));
+}
+
+void infoDisplay::setChannelNumber(QString s)
+{
+    ui->label->setText(s);
 }
 
 
