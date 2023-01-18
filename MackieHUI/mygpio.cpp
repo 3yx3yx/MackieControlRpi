@@ -39,7 +39,7 @@ bool Gpio::gpioInit(void)
     timer = new QTimer(this);
     for(int i = 0; i<N_CHANNELS; i++)
     {
-        for (int j = 0; j<8; j++)
+        for (int j = 0; j<4; j++)
         {
             shiftWriteToBuf(i,j,1);
             shiftLoadToRegisters();
@@ -283,7 +283,7 @@ int Gpio::getFaderPos(int channel, int adc)
 
 void Gpio::buttonPressedEmmiter(int channel, int type)
 {
-    //qDebug()<< "btn pressed "<< channel << type;
+    qDebug()<< "btn pressed "<< channel << type;
     switch (type)
     {
     case 0: emit recArmPressed(channel); break;
