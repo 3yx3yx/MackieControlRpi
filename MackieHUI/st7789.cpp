@@ -15,7 +15,7 @@ void DisplayTFT::Init(int Width, int Height)
 
     ST7789_ColorModeSet(ST7789_ColorMode_65K | ST7789_ColorMode_16bit);
     usleep(10*1000);
-    ST7789_MemAccessModeSet(4, 1, 1, 0);
+    ST7789_MemAccessModeSet(3, 1, 1, 0);
     usleep(10*1000);
     ST7789_InversionMode(1);
     usleep(10*1000);
